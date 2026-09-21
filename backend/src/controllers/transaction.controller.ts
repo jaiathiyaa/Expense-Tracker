@@ -69,3 +69,59 @@ export const createTransaction = async (req: Request, res: Response) =>{
         res.status(500).json({error: "An error occurred while creating the transaction."});
     }
 }
+
+export const updateTransactionById = async (req : Request , res: Response) => {
+    try{
+        const {id} = req.params;
+        const { title , description , amount, category , type , date } = req.body;
+        if( !title || amount === undefined || amount === null || !type){
+            return res.status(400).json({
+                error: "Title, amount and type are required."
+            });
+        }
+        if(type !== "EXPENSE" && type !== "INCOME"){
+            return res.status(400).json({ error: "Type must be either 'EXPENSE' or 'INCOME'." });
+        }
+        const numericAmount = Number(amount);
+        if (isNaN(numericAmount) || numericAmount <= 0) {
+            return res.status(400).json({
+                error: "Amount must be a valid positive number."
+            });
+        }
+        const updateTransaction = await prisma.transaction.update({
+            where: { id: String(id)},
+            data: {
+                title,
+                description,
+                amount: numericAmount,
+                category,
+                type,
+                date: date ? new Date(date) : new Date(),
+            }
+        });
+        res.status(200).json(updateTransaction);
+    }
+    catch(error){
+        console.error("Error updating transaction:", error);
+        res.status(500).json({error: "An error occurred while updating the transaction."});
+    }
+}
+
+export const deleteTransactionById = async (req:Request , res: Response) => {
+    try{
+        const {id} = req.params;
+
+        const deletedTransaction = await prisma.transaction.delete({
+            where: { id: String(id) }
+        })
+
+        if(!deletedTransaction) {
+            return res.status(404).json({ error: "Transaction not found." });
+        }
+        res.status(200).json({ message: "Transaction deleted successfully." });
+    }
+    catch(error){
+        console.error("Error deleting transaction:", error);
+        res.status(500).json({error: "An error occurred while deleting the transaction."});
+    }
+}
