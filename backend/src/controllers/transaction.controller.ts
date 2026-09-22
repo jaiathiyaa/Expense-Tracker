@@ -7,7 +7,14 @@ export const getAllTransactions = async (req: Request, res: Response) =>{
         const pagelimit = parseInt(req.query.limit as string) || 10; // Default limit is 10
         const page = parseInt(req.query.page as string) || 1;
         const offset = (page - 1) * pagelimit;
-        
+        if(page < 1) {
+            return res.status(400).json({ error: "Page number must be greater than or equal to 1." });
+        }
+
+        if(pagelimit < 1 || pagelimit > 100) {
+            return res.status(400).json({ error: "Limit must be a positive integer between 1 and 100." });
+        }
+
         const order = req.query.order as string || 'desc'; // Default order is 'desc'
         if(order !== 'asc' && order !== 'desc') {
             return res.status(400).json({ error: "Invalid order. Allowed values are 'asc' or 'desc'." });
@@ -48,16 +55,36 @@ export const getAllTransactions = async (req: Request, res: Response) =>{
                 gte: start,
                 lte: end
             };
+            if(start > end){
+                return res.status(400).json({ error: "Start date cannot be after end date." });
+            }
         }
-        const transactions = await prisma.transaction.findMany({
-            where: whereClause,
-            orderBy: {
-                [sortBy]: order
-            },
-            take: pagelimit,
-            skip: offset
+        const [transactions , total] = await Promise.all([
+            prisma.transaction.findMany({
+                where: whereClause,
+                orderBy: {
+                    [sortBy]: order
+                },
+                take: pagelimit,
+                skip: offset
+            }), 
+            prisma.transaction.count({ 
+                where: whereClause 
+            })
+        ]);
+
+        const totalPages = Math.ceil(total / pagelimit);
+        res.status(200).json({
+            data: transactions,
+            pagination: {
+                total,
+                page,
+                limit: pagelimit,
+                totalPages,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1
+            }
         });
-        res.status(200).json(transactions);
     }
     catch(error){
         console.error("Error fetching transactions:", error);
