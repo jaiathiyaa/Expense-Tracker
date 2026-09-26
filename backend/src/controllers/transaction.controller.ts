@@ -1,8 +1,9 @@
 import {Request, Response} from 'express';
 import {prisma} from '../lib/prisma';
 import { TransactionType } from '@prisma/client/wasm';
+import { error } from 'node:console';
 
-export const getAllTransactions = async (req: Request, res: Response) =>{
+export const getAllTransactions = async (req: Request, res: Response) => {
     try{
         const pagelimit = parseInt(req.query.limit as string) || 10; // Default limit is 10
         const page = parseInt(req.query.page as string) || 1;
@@ -42,11 +43,18 @@ export const getAllTransactions = async (req: Request, res: Response) =>{
 
         const start = new Date(`${startDate}T00:00:00.000Z`);
         const end = new Date(`${endDate}T23:59:59.999Z`);
-
+        
+        const userId = req.user?.id;
+        if(!userId){
+            return res.status(401).json({
+                error : "Unauthorized"
+            });
+        }
         const whereClause: any = {};
         if(type) {
             whereClause.type = type;
         }
+        whereClause.userId = userId;
         if(startDate && endDate) {
             if(isNaN(start.getTime()) || isNaN(end.getTime())) {
                 return res.status(400).json({ error: "Invalid date format. Please use YYYY-MM-DD." });
@@ -95,8 +103,20 @@ export const getAllTransactions = async (req: Request, res: Response) =>{
 export const getTransactionById = async (req: Request, res: Response) => {
     try {
         const {id} = req.params;
+
+        const userId = req.user?.id;
+
+        if(!userId){
+            return res.status(401).json({
+                error: "Unauthorized"
+            })
+        }
+
         const transaction = await prisma.transaction.findUnique({
-            where: { id: String(id) }
+            where: { 
+                id: String(id),
+                userId: userId
+            }
         });
         if (!transaction) {
             return res.status(404).json({ error: "Transaction not found." });
@@ -113,6 +133,12 @@ export const getTransactionById = async (req: Request, res: Response) => {
 export const createTransaction = async (req: Request, res: Response) =>{
     try{
         const { title , description , amount, category , type , date } = req.body;
+        const userId = req.user?.id;
+        if(!userId){
+            return res.status(401).json({
+                error: "Unauthorized"
+            })
+        }
         if (!title || amount === undefined || amount === null || !type) {
             return res.status(400).json({
                 error: "Title, amount and type are required."
@@ -136,6 +162,7 @@ export const createTransaction = async (req: Request, res: Response) =>{
                 category,
                 type,
                 date: date ? new Date(date) : new Date(),
+                userId
             }
         });
         res.status(201).json(newTransaction);
@@ -150,6 +177,12 @@ export const updateTransactionById = async (req : Request , res: Response) => {
     try{
         const {id} = req.params;
         const { title , description , amount, category , type , date } = req.body;
+        const userId = req.user?.id;
+        if(!userId){
+            return res.status(401).json({
+                error: "Unauthorized"
+            })
+        }
         if( !title || amount === undefined || amount === null || !type){
             return res.status(400).json({
                 error: "Title, amount and type are required."
@@ -165,7 +198,10 @@ export const updateTransactionById = async (req : Request , res: Response) => {
             });
         }
         const updateTransaction = await prisma.transaction.update({
-            where: { id: String(id)},
+            where: { 
+                id: String(id),
+                userId: userId
+            },
             data: {
                 title,
                 description,
@@ -186,9 +222,17 @@ export const updateTransactionById = async (req : Request , res: Response) => {
 export const deleteTransactionById = async (req:Request , res: Response) => {
     try{
         const {id} = req.params;
-
+        const userId = req.user?.id;
+        if(!userId){
+            return res.status(401).json({
+                error: "Unauthorized"
+            })
+        }
         const deletedTransaction = await prisma.transaction.delete({
-            where: { id: String(id) }
+            where: { 
+                id: String(id),
+                userId: userId
+            }
         })
 
         if(!deletedTransaction) {
@@ -205,7 +249,12 @@ export const deleteTransactionById = async (req:Request , res: Response) => {
 export const deleteTransactionByRange = async (req: Request, res: Response) => {
     try{
         const { startDate, endDate } = req.body;
-
+        const userId = req.user?.id;
+        if(!userId){
+            return res.status(401).json({
+                error: "Unauthorized"
+            })
+        }
         if (!startDate || !endDate) {
             return res.status(400).json({ error: "Start date and end date are required." });
         }
@@ -215,7 +264,8 @@ export const deleteTransactionByRange = async (req: Request, res: Response) => {
                 date: {
                     gte: new Date(startDate),
                     lte: new Date(endDate)
-                }
+                },
+                userId: userId
             }
         })
         res.status(200).json({ message: "Transactions deleted successfully." });
@@ -229,7 +279,12 @@ export const deleteTransactionByRange = async (req: Request, res: Response) => {
 export const getTransactionsByDateRange = async (req: Request, res: Response) => {
     try {
         const { startDate, endDate } = req.query;
-
+        const userId = req.user?.id;
+        if(!userId){
+            return res.status(401).json({
+                error: "Unauthorized"
+            })
+        }
         if (!startDate || !endDate) {
             return res.status(400).json({ error: "Start date and end date are required." });
         }
@@ -241,7 +296,8 @@ export const getTransactionsByDateRange = async (req: Request, res: Response) =>
                 date: {
                     gte: start,
                     lte: end
-                }   
+                },
+                userId: userId 
             },
             orderBy: {
                 date: 'desc'
@@ -258,13 +314,21 @@ export const getTransactionsByDateRange = async (req: Request, res: Response) =>
 export const getTransactionsByType = async (req: Request, res: Response) => {
     try {
         const { type } = req.query;
-        
+        const userId = req.user?.id;
+        if(!userId){
+            return res.status(401).json({
+                error: "Unauthorized"
+            })
+        }
         if (!type || (type !== "EXPENSE" && type !== "INCOME")) {
             return res.status(400).json({ error: "Type must be either 'EXPENSE' or 'INCOME'." });
         }
 
         const transactions = await prisma.transaction.findMany({
-            where: { type: type as TransactionType },
+            where: { 
+                type: type as TransactionType ,
+                userId: userId
+            },
             orderBy: {
                 date: 'desc'
             }

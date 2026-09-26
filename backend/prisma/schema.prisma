@@ -13,6 +13,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User{
+  id String @id @default(cuid())
+  name String
+  email String @unique
+  password String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions Transaction[]
+}
 
 model Transaction {
   id  String @id @default(cuid())
@@ -22,9 +33,13 @@ model Transaction {
   description String?
   date DateTime
   category String?
+
+
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
 }
 
 enum TransactionType{
