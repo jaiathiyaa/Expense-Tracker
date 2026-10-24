@@ -1,7 +1,6 @@
 import {Request, Response} from 'express';
 import {prisma} from '../lib/prisma';
-import { TransactionType } from '@prisma/client/wasm';
-import { error } from 'node:console';
+import { TransactionType } from "@prisma/client";
 
 export const getAllTransactions = async (req: Request, res: Response) => {
     try{
@@ -112,7 +111,7 @@ export const getTransactionById = async (req: Request, res: Response) => {
             })
         }
 
-        const transaction = await prisma.transaction.findUnique({
+        const transaction = await prisma.transaction.findFirst({
             where: { 
                 id: String(id),
                 userId: userId
@@ -197,21 +196,37 @@ export const updateTransactionById = async (req : Request , res: Response) => {
                 error: "Amount must be a valid positive number."
             });
         }
-        const updateTransaction = await prisma.transaction.update({
-            where: { 
+        const result = await prisma.transaction.updateMany({
+            where: {
                 id: String(id),
-                userId: userId
+                userId
             },
             data: {
-                title,
+                title: title.trim(),
                 description,
                 amount: numericAmount,
                 category,
                 type,
-                date: date ? new Date(date) : new Date(),
+                ...(date !== undefined && {
+                    date: new Date(date)
+                })
             }
         });
-        res.status(200).json(updateTransaction);
+
+        if (result.count === 0) {
+            return res.status(404).json({
+                error: "Transaction not found."
+            });
+        }
+
+        const updatedTransaction = await prisma.transaction.findFirst({
+            where: {
+                id: String(id),
+                userId
+            }
+        });
+
+        return res.status(200).json(updatedTransaction);
     }
     catch(error){
         console.error("Error updating transaction:", error);
@@ -228,17 +243,22 @@ export const deleteTransactionById = async (req:Request , res: Response) => {
                 error: "Unauthorized"
             })
         }
-        const deletedTransaction = await prisma.transaction.delete({
-            where: { 
+        const result = await prisma.transaction.deleteMany({
+            where: {
                 id: String(id),
-                userId: userId
+                userId
             }
-        })
+        });
 
-        if(!deletedTransaction) {
-            return res.status(404).json({ error: "Transaction not found." });
+        if (result.count === 0) {
+            return res.status(404).json({
+                error: "Transaction not found."
+            });
         }
-        res.status(200).json({ message: "Transaction deleted successfully." });
+
+        return res.status(200).json({
+            message: "Transaction deleted successfully."
+        });
     }
     catch(error){
         console.error("Error deleting transaction:", error);
@@ -258,17 +278,38 @@ export const deleteTransactionByRange = async (req: Request, res: Response) => {
         if (!startDate || !endDate) {
             return res.status(400).json({ error: "Start date and end date are required." });
         }
+        const start = new Date(startDate);
+        const end = new Date(endDate);
 
-        const deletedTransactions = await prisma.transaction.deleteMany({
-            where:  {
+        if (
+            isNaN(start.getTime()) ||
+            isNaN(end.getTime())
+        ) {
+            return res.status(400).json({
+                error: "Invalid date format."
+            });
+        }
+
+        if (start > end) {
+            return res.status(400).json({
+                error: "Start date cannot be after end date."
+            });
+        }
+
+        const result = await prisma.transaction.deleteMany({
+            where: {
                 date: {
-                    gte: new Date(startDate),
-                    lte: new Date(endDate)
+                    gte: start,
+                    lte: end
                 },
-                userId: userId
+                userId
             }
-        })
-        res.status(200).json({ message: "Transactions deleted successfully." });
+        });
+
+        return res.status(200).json({
+            message: "Transactions deleted successfully.",
+            deletedCount: result.count
+        });
     }
     catch(error){
         console.error("Error deleting transactions:", error);
@@ -338,5 +379,45 @@ export const getTransactionsByType = async (req: Request, res: Response) => {
     catch (error) {
         console.error("Error fetching transactions by type:", error);
         res.status(500).json({ error: "An error occurred while fetching transactions by type." });
+    }
+};
+
+export const exportTransactionsCsv = async (req: Request, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        const transactions = await prisma.transaction.findMany({
+            where: { userId },
+            orderBy: { date: 'desc' }
+        });
+
+        const escapeCsv = (val: string | number | null | undefined): string => {
+            if (val === null || val === undefined) return '""';
+            const str = String(val).replace(/"/g, '""');
+            return `"${str}"`;
+        };
+
+        const headers = ["ID", "Date", "Title", "Type", "Category", "Amount", "Description"];
+        const rows = transactions.map(t => [
+            escapeCsv(t.id),
+            escapeCsv(t.date ? new Date(t.date).toISOString().split('T')[0] : ''),
+            escapeCsv(t.title),
+            escapeCsv(t.type),
+            escapeCsv(t.category || 'General'),
+            escapeCsv(t.amount.toFixed(2)),
+            escapeCsv(t.description || '')
+        ].join(','));
+
+        const csvContent = [headers.join(','), ...rows].join('\r\n');
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="transactions.csv"');
+        return res.status(200).send(csvContent);
+    } catch (error) {
+        console.error("Error exporting transactions:", error);
+        return res.status(500).json({ error: "Failed to export transactions." });
     }
 };

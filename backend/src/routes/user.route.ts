@@ -1,10 +1,10 @@
-import {Router} from "express";
-import { createUser, getUserById, updateUserById } from "../controllers/user.controller";
+import { Router } from "express";
+import { getUserById, updateUserById } from "../controllers/user.controller";
+import { authMiddleware } from "../middleware/authMiddleware";
 
 const router = Router();
 
-router.post("/users",createUser);
-router.get("/users/:id",getUserById);
-router.put("/users/:id",updateUserById);
+router.get("/users/:id", authMiddleware, getUserById);
+router.put("/users/:id", authMiddleware, updateUserById);
 
 export default router;
