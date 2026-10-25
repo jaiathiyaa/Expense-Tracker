@@ -3,7 +3,7 @@ services:
     name: expense-tracker-api
     runtime: node
     rootDir: backend
-    buildCommand: npm install && npm run build && npx prisma generate && npx prisma migrate deploy
+    buildCommand: npm install --include=dev && npm run build && npx prisma generate && npx prisma migrate deploy
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -11,6 +11,8 @@ services:
       - key: TRUST_PROXY
         value: "true"
       - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
         sync: false
       - key: JWT_SECRET
         sync: false
