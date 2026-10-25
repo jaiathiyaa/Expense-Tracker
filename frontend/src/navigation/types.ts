@@ -11,6 +11,7 @@ export type RootStackParamList = {
   SmartFeatures: undefined;
   SmsImport: undefined;
   VoiceEntry: undefined;
+  AiAssistant: undefined;
 };
 
 export type GetStartedNavigationProp = NativeStackNavigationProp<

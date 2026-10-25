@@ -27,6 +27,7 @@ import {
 } from '../services/voiceParserService';
 import { voiceRecognitionService } from '../services/voiceRecognitionService';
 import { transactionService } from '../services/transactionService';
+import { offlineTransactionService } from '../services/offlineTransactionService';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryDefinition } from '../utils/categories';
 
 const SAMPLE_VOICE_PROMPTS = [
@@ -38,7 +39,7 @@ const SAMPLE_VOICE_PROMPTS = [
 
 export const VoiceEntryScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { isDark, currencyInfo } = useSettings();
 
   // Voice recording state
@@ -58,6 +59,7 @@ export const VoiceEntryScreen: React.FC = () => {
   // Save state
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isOfflineSaved, setIsOfflineSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Animation pulse for listening state
@@ -115,13 +117,16 @@ export const VoiceEntryScreen: React.FC = () => {
       onEnd: () => {
         setIsListening(false);
       },
+      onCancel: () => {
+        setIsListening(false);
+      },
     });
   };
 
   const stopVoiceRecording = () => {
     voiceRecognitionService.stopListening();
     setIsListening(false);
-    if (transcript.trim()) {
+    if (transcript.trim() && !parsedTx) {
       handleProcessTranscript(transcript);
     }
   };
@@ -148,6 +153,7 @@ export const VoiceEntryScreen: React.FC = () => {
   };
 
   const handleConfirmAndSave = async () => {
+    if (isSaving) return;
     if (!token) {
       Alert.alert('Session Expired', 'Please log in again to save this transaction.');
       return;
@@ -173,7 +179,8 @@ export const VoiceEntryScreen: React.FC = () => {
     setSaveError(null);
 
     try {
-      await transactionService.createTransaction(token, {
+      const activeUserId = user?.id || '';
+      const result = await offlineTransactionService.createTransaction(token, activeUserId, {
         title: editTitle.trim(),
         amount: numericAmount,
         type: editType,
@@ -182,6 +189,7 @@ export const VoiceEntryScreen: React.FC = () => {
         description: `Voice Entry: "${transcript.trim()}"`.slice(0, 255),
       });
 
+      setIsOfflineSaved(result.isOffline);
       setSaveSuccess(true);
     } catch (err: any) {
       setSaveError(
@@ -232,9 +240,13 @@ export const VoiceEntryScreen: React.FC = () => {
             <View style={styles.successIconCircle}>
               <Ionicons name="checkmark" size={32} color="#FFFFFF" />
             </View>
-            <Text style={[styles.successTitle, isDark && styles.textLight]}>Transaction Saved!</Text>
+            <Text style={[styles.successTitle, isDark && styles.textLight]}>
+              {isOfflineSaved ? 'Transaction Queued Offline!' : 'Transaction Saved!'}
+            </Text>
             <Text style={[styles.successSub, isDark && styles.textMutedDark]}>
-              Successfully recorded ₹{parseFloat(editAmount).toFixed(2)} for "{editTitle}".
+              {isOfflineSaved
+                ? `Queued ₹${parseFloat(editAmount).toFixed(2)} for "${editTitle}". Will sync when internet is restored.`
+                : `Successfully recorded ₹${parseFloat(editAmount).toFixed(2)} for "${editTitle}".`}
             </Text>
 
             <View style={styles.successActionRow}>
@@ -306,22 +318,48 @@ export const VoiceEntryScreen: React.FC = () => {
               <View
                 style={[
                   styles.statusPill,
-                  isListening ? styles.statusPillActive : styles.statusPillIdle,
+                  isListening
+                    ? styles.statusPillActive
+                    : isSpeechSupported
+                    ? styles.statusPillIdle
+                    : styles.statusPillDisabled,
                   isDark && styles.statusPillDark,
                 ]}
               >
                 <Ionicons
-                  name={isListening ? 'radio-button-on' : 'mic-circle-outline'}
+                  name={
+                    isListening
+                      ? 'radio-button-on'
+                      : isSpeechSupported
+                      ? 'mic-circle-outline'
+                      : 'information-circle-outline'
+                  }
                   size={15}
-                  color={isListening ? '#EF4444' : theme.colors.primary}
+                  color={
+                    isListening
+                      ? '#EF4444'
+                      : isSpeechSupported
+                      ? theme.colors.primary
+                      : theme.colors.textSecondary
+                  }
                 />
                 <Text
                   style={[
                     styles.statusPillText,
-                    { color: isListening ? '#EF4444' : theme.colors.primary },
+                    {
+                      color: isListening
+                        ? '#EF4444'
+                        : isSpeechSupported
+                        ? theme.colors.primary
+                        : theme.colors.textSecondary,
+                    },
                   ]}
                 >
-                  {isListening ? 'Listening for speech...' : 'Microphone Ready'}
+                  {isListening
+                    ? 'Listening for speech...'
+                    : isSpeechSupported
+                    ? 'Microphone Ready'
+                    : 'Voice Unavailable (Manual Entry Active)'}
                 </Text>
               </View>
 
@@ -691,6 +729,9 @@ const styles = StyleSheet.create({
   },
   statusPillActive: {
     backgroundColor: '#FEE2E2',
+  },
+  statusPillDisabled: {
+    backgroundColor: '#F1F5F9',
   },
   statusPillDark: {
     backgroundColor: '#1E1B4B',

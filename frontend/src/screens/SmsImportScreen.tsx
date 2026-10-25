@@ -25,6 +25,7 @@ import {
   ParsedSmsTransaction,
 } from '../services/smsParserService';
 import { transactionService } from '../services/transactionService';
+import { offlineTransactionService } from '../services/offlineTransactionService';
 import { EditParsedTransactionModal } from '../components/smart/EditParsedTransactionModal';
 import { getCategoryDefinition } from '../utils/categories';
 
@@ -49,7 +50,7 @@ const SAMPLE_TEMPLATES = [
 
 export const SmsImportScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { isDark, currencyInfo } = useSettings();
 
   const [rawText, setRawText] = useState('');
@@ -166,12 +167,18 @@ export const SmsImportScreen: React.FC = () => {
     let successCount = 0;
     const failedItems: string[] = [];
 
+    const activeUserId = user?.id || '';
     for (let i = 0; i < itemsToImport.length; i++) {
       const item = itemsToImport[i];
       setImportProgress({ current: i + 1, total: itemsToImport.length });
 
       try {
-        await transactionService.createTransaction(token, {
+        const clientTxId = item.referenceNumber
+          ? `sms_${activeUserId}_${item.referenceNumber.replace(/[^a-zA-Z0-9]/g, '_')}`
+          : undefined;
+
+        await offlineTransactionService.createTransaction(token, activeUserId, {
+          clientTxId,
           title: item.title,
           amount: item.amount,
           type: item.type,

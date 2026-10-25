@@ -19,6 +19,10 @@ import {
   MonthlySummaryItem,
   TransactionItem,
 } from '../services/dashboardService';
+import { offlineStorage } from '../services/offlineStorage';
+import { offlineTransactionService } from '../services/offlineTransactionService';
+import { syncService } from '../services/syncService';
+import { OfflineSyncBanner } from '../components/offline/OfflineSyncBanner';
 import { DashboardHeader } from '../components/dashboard/DashboardHeader';
 import { BalanceCard } from '../components/dashboard/BalanceCard';
 import { QuickActions } from '../components/dashboard/QuickActions';
@@ -36,6 +40,7 @@ interface HomeScreenProps {
   onNavigateToSmsImport?: () => void;
   onNavigateToVoiceEntry?: () => void;
   onNavigateToSmartFeatures?: () => void;
+  onNavigateToAiAssistant?: () => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -47,6 +52,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigateToSmsImport,
   onNavigateToVoiceEntry,
   onNavigateToSmartFeatures,
+  onNavigateToAiAssistant,
 }) => {
   const { user, token, logout } = useAuth();
 
@@ -66,27 +72,101 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const fetchDashboardData = useCallback(
     async (isPullRefresh: boolean = false) => {
-      if (!token) return;
+      const activeUserId = user?.id || '';
 
       if (!isPullRefresh) {
         setIsLoading(true);
       } else {
         setIsRefreshing(true);
+        if (token && activeUserId) {
+          syncService.syncPendingTransactions().catch(() => {});
+        }
       }
       setErrorMessage(null);
 
       try {
-        const data = await dashboardService.fetchAllDashboardData(token);
-        setSummary(data.summary);
-        setCategories(data.categories);
-        setMonthlySummary(data.monthlySummary);
-        setRecentTransactions(data.recentTransactions);
-      } catch (err: any) {
-        if (err.status === 401) {
-          // Token expired or invalid, log out cleanly
-          logout();
-          return;
+        const isOnline = syncService.getStateSync().isOnline;
+
+        if (isOnline && token) {
+          try {
+            const data = await dashboardService.fetchAllDashboardData(token);
+
+            // Cache latest transactions
+            if (activeUserId && data.recentTransactions.length > 0) {
+              await offlineStorage.cacheTransactions(activeUserId, data.recentTransactions);
+            }
+
+            // Adjust totals for any local pending transactions
+            const pending = activeUserId ? await offlineStorage.getPendingTransactions(activeUserId) : [];
+            let adjustedIncome = data.summary.totalIncome;
+            let adjustedExpenses = data.summary.totalExpenses;
+
+            pending.forEach((p) => {
+              if (p.type === 'INCOME') adjustedIncome += p.amount;
+              if (p.type === 'EXPENSE') adjustedExpenses += p.amount;
+            });
+
+            const pendingItems = pending.map(offlineStorage.pendingToTransactionItem);
+            const mergedRecent = offlineTransactionService
+              .mergeAndDeduplicate(data.recentTransactions, pendingItems)
+              .slice(0, 4);
+
+            setSummary({
+              totalIncome: adjustedIncome,
+              totalExpenses: adjustedExpenses,
+              balance: adjustedIncome - adjustedExpenses,
+            });
+            setCategories(data.categories);
+            setMonthlySummary(data.monthlySummary);
+            setRecentTransactions(mergedRecent);
+            return;
+          } catch (onlineErr: any) {
+            if (onlineErr.status === 401) {
+              logout();
+              return;
+            }
+            console.warn('[HomeScreen] Online fetch failed, loading offline local cache:', onlineErr.message);
+          }
         }
+
+        // Offline or fallback to local SQLite cache
+        if (activeUserId) {
+          const [cachedItems, pendingRecords] = await Promise.all([
+            offlineStorage.getCachedTransactions(activeUserId),
+            offlineStorage.getPendingTransactions(activeUserId),
+          ]);
+
+          const pendingItems = pendingRecords.map(offlineStorage.pendingToTransactionItem);
+          const allMerged = offlineTransactionService.mergeAndDeduplicate(cachedItems, pendingItems);
+
+          let totalIncome = 0;
+          let totalExpenses = 0;
+          const categoryTotals: Record<string, number> = {};
+
+          allMerged.forEach((tx) => {
+            if (tx.type === 'INCOME') {
+              totalIncome += tx.amount;
+            } else {
+              totalExpenses += tx.amount;
+              const cat = tx.category || 'General';
+              categoryTotals[cat] = (categoryTotals[cat] || 0) + tx.amount;
+            }
+          });
+
+          const catList: CategoryItem[] = Object.keys(categoryTotals).map((cat) => ({
+            category: cat,
+            total: categoryTotals[cat],
+          })).sort((a, b) => b.total - a.total);
+
+          setSummary({
+            totalIncome,
+            totalExpenses,
+            balance: totalIncome - totalExpenses,
+          });
+          setCategories(catList);
+          setRecentTransactions(allMerged.slice(0, 4));
+        }
+      } catch (err: any) {
         setErrorMessage(
           err.message || 'Unable to load dashboard data. Pull down to retry.'
         );
@@ -95,15 +175,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         setIsRefreshing(false);
       }
     },
-    [token, logout]
+    [token, user?.id, logout]
   );
 
-  // Auto-refresh when HomeScreen gains focus (e.g. returning from AddTransaction)
+  // Auto-refresh when HomeScreen gains focus
   useFocusEffect(
     useCallback(() => {
-      fetchDashboardData(true);
+      fetchDashboardData(false);
     }, [fetchDashboardData])
   );
+
+  // Auto-refresh when sync state updates
+  useEffect(() => {
+    const unsubscribe = syncService.subscribe(() => {
+      fetchDashboardData(false);
+    });
+    return unsubscribe;
+  }, [fetchDashboardData]);
 
   if (isLoading && !isRefreshing) {
     return (
@@ -132,6 +220,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           userName={user?.name}
           onProfilePress={onNavigateToProfile}
         />
+
+        {/* Offline Sync Banner */}
+        <OfflineSyncBanner />
 
         {/* Error Notice with Retry */}
         {errorMessage ? (
@@ -186,6 +277,31 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </View>
           </View>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.primary} />
+        </TouchableOpacity>
+
+        {/* AI Expense Assistant Banner */}
+        <TouchableOpacity
+          style={[styles.smartBanner, styles.aiBanner, theme.shadows.soft]}
+          onPress={() => onNavigateToAiAssistant?.()}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Open AI Expense Assistant Chat"
+        >
+          <View style={styles.smartBannerLeft}>
+            <View style={[styles.smartIconPill, styles.aiIconPill]}>
+              <Ionicons name="chatbubble-ellipses" size={16} color="#7C3AED" />
+            </View>
+            <View style={styles.smartBannerTextGroup}>
+              <View style={styles.smartBannerTitleRow}>
+                <Text style={styles.smartBannerTitle}>AI Expense Assistant</Text>
+                <View style={styles.aiNewPill}>
+                  <Text style={styles.aiNewPillText}>AI CHAT</Text>
+                </View>
+              </View>
+              <Text style={styles.smartBannerSub}>Ask spending questions & get instant answers</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#7C3AED" />
         </TouchableOpacity>
 
         {/* Section D: Spending Overview (Chart & Comparison) */}
@@ -305,5 +421,25 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 11,
     marginTop: 1,
+  },
+  aiBanner: {
+    borderColor: '#E9D5FF',
+    backgroundColor: '#FAF5FF',
+  },
+  aiIconPill: {
+    backgroundColor: '#EDE9FE',
+  },
+  aiNewPill: {
+    backgroundColor: '#DDD6FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  aiNewPillText: {
+    color: '#7C3AED',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

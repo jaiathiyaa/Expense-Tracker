@@ -88,15 +88,11 @@ export const SmartFeaturesScreen: React.FC = () => {
       icon: 'sparkles-outline',
       iconColor: '#D97706',
       iconBg: isDark ? '#451A03' : '#FEF3C7',
-      statusBadge: 'Phase 7D',
-      statusColor: '#F59E0B',
-      statusBg: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FFFBEB',
-      actionLabel: 'AI Spending Chat Preview',
-      onPress: () =>
-        Alert.alert(
-          'AI Assistant (Phase 7D)',
-          'In-app spending intelligence chat interface with deterministic user analytics is queued as Phase 7D.'
-        ),
+      statusBadge: 'Ready to Use',
+      statusColor: '#10B981',
+      statusBg: isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5',
+      actionLabel: 'Chat with AI Assistant',
+      onPress: () => navigation.navigate('AiAssistant'),
     },
   ];
 

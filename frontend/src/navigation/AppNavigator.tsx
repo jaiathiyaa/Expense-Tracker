@@ -11,6 +11,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { SmartFeaturesScreen } from '../screens/SmartFeaturesScreen';
 import { SmsImportScreen } from '../screens/SmsImportScreen';
 import { VoiceEntryScreen } from '../screens/VoiceEntryScreen';
+import { AiAssistantScreen } from '../screens/AiAssistantScreen';
 import { MainTabNavigator } from './MainTabNavigator';
 import { theme } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,6 +78,13 @@ export const AppNavigator: React.FC = () => {
           <Stack.Screen
             name="VoiceEntry"
             component={VoiceEntryScreen}
+            options={{
+              animation: 'slide_from_right',
+            }}
+          />
+          <Stack.Screen
+            name="AiAssistant"
+            component={AiAssistantScreen}
             options={{
               animation: 'slide_from_right',
             }}

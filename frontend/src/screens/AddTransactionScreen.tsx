@@ -19,6 +19,7 @@ import {
   AddTransactionRouteProp,
 } from '../navigation/types';
 import { transactionService } from '../services/transactionService';
+import { offlineTransactionService } from '../services/offlineTransactionService';
 import { FormInput } from '../components/FormInput';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -35,7 +36,7 @@ import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../utils/categories';
 export const AddTransactionScreen: React.FC = () => {
   const navigation = useNavigation<AddTransactionNavigationProp>();
   const route = useRoute<AddTransactionRouteProp>();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   // Navigation params: initialType
   const initialType = route.params?.initialType || 'EXPENSE';
@@ -57,6 +58,7 @@ export const AddTransactionScreen: React.FC = () => {
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string>('');
 
   // Sync with route params if route changes
   useEffect(() => {
@@ -97,10 +99,12 @@ export const AddTransactionScreen: React.FC = () => {
 
   // Submit Handler
   const handleSubmit = async () => {
+    if (isSubmitting) return; // Prevent double tap
     setServerError(null);
 
-    if (!token) {
-      setServerError('Authentication session expired. Please log in again.');
+    const activeUserId = user?.id || '';
+    if (!activeUserId) {
+      setServerError('No active user session. Please log in again.');
       return;
     }
 
@@ -123,18 +127,25 @@ export const AddTransactionScreen: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      // Build clean payload compatible with backend contract
-      // Notice: paymentMethod is NOT in backend Prisma schema, so do NOT send it.
-      await transactionService.createTransaction(token, {
-        title: title.trim(),
-        amount: validation.parsedAmount,
-        type,
-        category: category.trim(),
-        description: description.trim() ? description.trim() : undefined,
-        date: date.toISOString(),
-      });
+      const result = await offlineTransactionService.createTransaction(
+        token,
+        activeUserId,
+        {
+          title: title.trim(),
+          amount: validation.parsedAmount,
+          type,
+          category: category.trim(),
+          description: description.trim() ? description.trim() : undefined,
+          date: date.toISOString(),
+        }
+      );
 
       setSaveSuccess(true);
+      if (result.isOffline) {
+        setSaveMessage('Saved offline. Transaction will sync automatically when connected.');
+      } else {
+        setSaveMessage(`${isExpense ? 'Expense' : 'Income'} recorded successfully!`);
+      }
 
       // Brief delay so user sees success state, then navigate
       setTimeout(() => {
@@ -143,12 +154,12 @@ export const AddTransactionScreen: React.FC = () => {
         } else {
           navigation.navigate('MainTabs', { screen: 'Transactions' });
         }
-      }, 500);
+      }, 600);
     } catch (err: any) {
-      // Do not clear the form on error
+      // Do not clear the form on error - preserve user input
       setServerError(
         err.message ||
-          'Failed to record transaction. Please verify details and try again.'
+          'Failed to record transaction. Your entry draft is preserved. Please try again.'
       );
     } finally {
       setIsSubmitting(false);
@@ -208,7 +219,7 @@ export const AddTransactionScreen: React.FC = () => {
             <View style={styles.successBanner}>
               <Ionicons name="checkmark-circle" size={20} color={theme.colors.success} />
               <Text style={styles.successText}>
-                {isExpense ? 'Expense' : 'Income'} recorded successfully!
+                {saveMessage || `${isExpense ? 'Expense' : 'Income'} recorded successfully!`}
               </Text>
             </View>
           ) : null}

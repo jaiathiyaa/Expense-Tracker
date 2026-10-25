@@ -3,6 +3,9 @@ import { User, LoginPayload, RegisterPayload } from '../api/types';
 import { authService } from '../services/authService';
 import { authStorage } from '../services/authStorage';
 
+import { offlineStorage } from '../services/offlineStorage';
+import { syncService } from '../services/syncService';
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -27,6 +30,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     checkSession(true);
   }, []);
 
+  // Update syncService session whenever token or user changes
+  useEffect(() => {
+    syncService.setSession(token, user?.id || null);
+  }, [token, user?.id]);
+
   const checkSession = async (showGlobalLoading: boolean = false) => {
     try {
       if (showGlobalLoading) {
@@ -40,19 +48,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Verify stored token with backend
-      const response = await authService.getMe(storedToken);
-      if (response && response.user) {
-        setUser(response.user);
-        setToken(storedToken);
-      } else {
-        await authStorage.clearToken();
-        setUser(null);
-        setToken(null);
+      try {
+        // Verify stored token with backend
+        const response = await authService.getMe(storedToken);
+        if (response && response.user) {
+          setUser(response.user);
+          setToken(storedToken);
+          await offlineStorage.cacheUserProfile(response.user);
+        } else {
+          await authStorage.clearToken();
+          setUser(null);
+          setToken(null);
+        }
+      } catch (networkErr: any) {
+        // If error is 401 Unauthorized, token is expired/invalid -> clear session
+        if (networkErr?.status === 401) {
+          await authStorage.clearToken();
+          setUser(null);
+          setToken(null);
+        } else {
+          // Device is offline or server unreachable -> preserve session using cached user profile!
+          const cachedUser = await offlineStorage.getCachedUserProfile();
+          if (cachedUser) {
+            setUser(cachedUser);
+            setToken(storedToken);
+          } else {
+            // No cached user profile available
+            setUser(null);
+            setToken(storedToken);
+          }
+        }
       }
     } catch {
-      // Token invalid or expired, clear it
-      await authStorage.clearToken();
       setUser(null);
       setToken(null);
     } finally {
@@ -65,6 +92,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (payload: LoginPayload): Promise<User> => {
     const response = await authService.login(payload);
     await authStorage.saveToken(response.token);
+    await offlineStorage.cacheUserProfile(response.user);
     setToken(response.token);
     setUser(response.user);
     return response.user;
@@ -80,6 +108,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       await authStorage.clearToken();
     } finally {
+      syncService.setSession(null, null);
       setUser(null);
       setToken(null);
     }
@@ -87,6 +116,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
+    offlineStorage.cacheUserProfile(updatedUser);
   };
 
   return (

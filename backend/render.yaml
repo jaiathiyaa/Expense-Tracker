@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: expense-tracker-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run build && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: CORS_ORIGIN
+        value: ""

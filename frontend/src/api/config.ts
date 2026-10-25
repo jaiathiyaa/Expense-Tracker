@@ -21,8 +21,11 @@ const getBaseHost = () => {
   return LAN_HOST || DEFAULT_HOST;
 };
 
+// In production release builds, use deployed HTTPS backend if configured via EXPO_PUBLIC_API_URL
+const PROD_API_URL = process.env.EXPO_PUBLIC_API_URL;
+
 export const API_CONFIG = {
-  BASE_URL: `http://${getBaseHost()}:${API_PORT}/api`,
+  BASE_URL: PROD_API_URL || `http://${getBaseHost()}:${API_PORT}/api`,
   TIMEOUT_MS: 15000,
   ENDPOINTS: {
     REGISTER: '/auth/register',
@@ -32,5 +35,7 @@ export const API_CONFIG = {
     CHANGE_PASSWORD: '/auth/change-password',
     DELETE_ACCOUNT: '/auth/account',
     EXPORT_TRANSACTIONS: '/transactions/export',
+    ASSISTANT_CHAT: '/assistant/chat',
+    ASSISTANT_RESET: '/assistant/reset',
   },
 };

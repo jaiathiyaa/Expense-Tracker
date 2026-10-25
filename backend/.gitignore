@@ -39,7 +39,6 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # Prisma
-prisma/migrations/
 .prisma/
 
 # OS files

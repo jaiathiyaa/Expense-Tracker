@@ -129,21 +129,22 @@ export const getTransactionById = async (req: Request, res: Response) => {
 }
 
 
-export const createTransaction = async (req: Request, res: Response) =>{
-    try{
-        const { title , description , amount, category , type , date } = req.body;
+export const createTransaction = async (req: Request, res: Response) => {
+    try {
+        const { title, description, amount, category, type, date } = req.body;
+        const clientTxId = (req.body.clientTxId || req.headers['x-idempotency-key'] as string)?.trim() || undefined;
         const userId = req.user?.id;
-        if(!userId){
+        if (!userId) {
             return res.status(401).json({
                 error: "Unauthorized"
-            })
+            });
         }
         if (!title || amount === undefined || amount === null || !type) {
             return res.status(400).json({
                 error: "Title, amount and type are required."
             });
         }
-        if( type !== "EXPENSE" && type !== "INCOME"){
+        if (type !== "EXPENSE" && type !== "INCOME") {
             return res.status(400).json({ error: "Type must be either 'EXPENSE' or 'INCOME'." });
         }
         const numericAmount = Number(amount);
@@ -153,24 +154,59 @@ export const createTransaction = async (req: Request, res: Response) =>{
                 error: "Amount must be a valid positive number."
             });
         }
-        const newTransaction = await prisma.transaction.create({
-            data :{
-                title,
-                description,
-                amount: numericAmount,
-                category,
-                type,
-                date: date ? new Date(date) : new Date(),
-                userId
+
+        // Idempotency check: if clientTxId is supplied, check if already recorded for this user
+        if (clientTxId) {
+            const existing = await prisma.transaction.findUnique({
+                where: {
+                    userId_clientTxId: {
+                        userId,
+                        clientTxId
+                    }
+                }
+            });
+            if (existing) {
+                return res.status(200).json(existing);
             }
-        });
-        res.status(201).json(newTransaction);
+        }
+
+        try {
+            const newTransaction = await prisma.transaction.create({
+                data: {
+                    title: title.trim(),
+                    description: description ? description.trim() : null,
+                    amount: numericAmount,
+                    category: category ? category.trim() : null,
+                    type,
+                    date: date ? new Date(date) : new Date(),
+                    userId,
+                    clientTxId
+                }
+            });
+            return res.status(201).json(newTransaction);
+        } catch (innerError: any) {
+            // Handle race condition if duplicate request arrives simultaneously
+            if (innerError.code === 'P2002' && clientTxId) {
+                const existing = await prisma.transaction.findUnique({
+                    where: {
+                        userId_clientTxId: {
+                            userId,
+                            clientTxId
+                        }
+                    }
+                });
+                if (existing) {
+                    return res.status(200).json(existing);
+                }
+            }
+            throw innerError;
+        }
     }
-    catch(error){
+    catch (error) {
         console.error("Error creating transaction:", error);
-        res.status(500).json({error: "An error occurred while creating the transaction."});
+        res.status(500).json({ error: "An error occurred while creating the transaction." });
     }
-}
+};
 
 export const updateTransactionById = async (req : Request , res: Response) => {
     try{
@@ -394,21 +430,33 @@ export const exportTransactionsCsv = async (req: Request, res: Response) => {
             orderBy: { date: 'desc' }
         });
 
-        const escapeCsv = (val: string | number | null | undefined): string => {
+        const sanitizeAndEscapeCsv = (val: string | number | null | undefined, isText: boolean = true): string => {
             if (val === null || val === undefined) return '""';
-            const str = String(val).replace(/"/g, '""');
-            return `"${str}"`;
+            let str = String(val);
+
+            // Neutralize spreadsheet formula injection on text fields
+            // Attackers can exploit fields starting with =, +, -, @, tab, or carriage return (even with leading whitespace)
+            if (isText && str.length > 0) {
+                const trimmed = str.trimStart();
+                if (/^[=+\-@\t\r]/.test(trimmed)) {
+                    str = `'` + str;
+                }
+            }
+
+            // Standard RFC 4180 CSV escaping: double any embedded double quotes and wrap in quotes
+            const escaped = str.replace(/"/g, '""');
+            return `"${escaped}"`;
         };
 
         const headers = ["ID", "Date", "Title", "Type", "Category", "Amount", "Description"];
         const rows = transactions.map(t => [
-            escapeCsv(t.id),
-            escapeCsv(t.date ? new Date(t.date).toISOString().split('T')[0] : ''),
-            escapeCsv(t.title),
-            escapeCsv(t.type),
-            escapeCsv(t.category || 'General'),
-            escapeCsv(t.amount.toFixed(2)),
-            escapeCsv(t.description || '')
+            sanitizeAndEscapeCsv(t.id, false),
+            sanitizeAndEscapeCsv(t.date ? new Date(t.date).toISOString().split('T')[0] : '', false),
+            sanitizeAndEscapeCsv(t.title, true),
+            sanitizeAndEscapeCsv(t.type, false),
+            sanitizeAndEscapeCsv(t.category || 'General', true),
+            sanitizeAndEscapeCsv(t.amount.toFixed(2), false),
+            sanitizeAndEscapeCsv(t.description || '', true)
         ].join(','));
 
         const csvContent = [headers.join(','), ...rows].join('\r\n');

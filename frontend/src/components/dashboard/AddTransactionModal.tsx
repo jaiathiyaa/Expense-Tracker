@@ -15,11 +15,13 @@ import { FormInput } from '../FormInput';
 import { PrimaryButton } from '../PrimaryButton';
 import { ErrorBanner } from '../ErrorBanner';
 import { dashboardService } from '../../services/dashboardService';
+import { offlineTransactionService } from '../../services/offlineTransactionService';
+import { useAuth } from '../../context/AuthContext';
 
 interface AddTransactionModalProps {
   visible: boolean;
   initialType?: 'EXPENSE' | 'INCOME';
-  token: string | null;
+  token?: string | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -57,8 +59,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     setError(null);
   }, [visible, initialType]);
 
+  const { user: authUser, token: authToken } = useAuth();
+  const effectiveToken = token || authToken;
+  const activeUserId = authUser?.id || '';
+
   const handleSubmit = async () => {
-    if (!token) return;
+    if (isSubmitting) return; // Prevent double tap
+    if (!activeUserId) {
+      setError('Please log in to record a transaction.');
+      return;
+    }
 
     setError(null);
     const parsedAmount = parseFloat(amount.trim());
@@ -75,7 +85,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      await dashboardService.createTransaction(token, {
+      await offlineTransactionService.createTransaction(effectiveToken, activeUserId, {
         title: title.trim(),
         amount: parsedAmount,
         type,

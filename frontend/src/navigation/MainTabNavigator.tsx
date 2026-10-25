@@ -58,6 +58,7 @@ export const MainTabNavigator: React.FC = () => {
               onNavigateToSmsImport={() => rootNavigation.navigate('SmsImport')}
               onNavigateToVoiceEntry={() => rootNavigation.navigate('VoiceEntry')}
               onNavigateToSmartFeatures={() => rootNavigation.navigate('SmartFeatures')}
+              onNavigateToAiAssistant={() => rootNavigation.navigate('AiAssistant')}
             />
           )}
         </Tab.Screen>

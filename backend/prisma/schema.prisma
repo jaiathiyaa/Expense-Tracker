@@ -35,11 +35,14 @@ model Transaction {
   category String?
 
 
+  clientTxId String?
   userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([userId, clientTxId])
 }
 
 enum TransactionType{

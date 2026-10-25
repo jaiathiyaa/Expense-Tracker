@@ -9,11 +9,12 @@ import {
     deleteAccount
 } from "../controllers/auth.controller";
 import { authMiddleware } from "../middleware/authMiddleware";
+import { loginRateLimiter, registerRateLimiter } from "../middleware/rateLimiter";
 
 const router = Router();
 
-router.post("/register", register);
-router.post("/login", login);
+router.post("/register", registerRateLimiter, register);
+router.post("/login", loginRateLimiter, login);
 
 // Authenticated user account routes (strictly scoped to req.user.id)
 router.get("/me", authMiddleware, getMe);

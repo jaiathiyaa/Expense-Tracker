@@ -17,6 +17,10 @@ import {
   transactionService,
   GetTransactionsParams,
 } from '../services/transactionService';
+import { offlineTransactionService } from '../services/offlineTransactionService';
+import { syncService } from '../services/syncService';
+import { OfflineSyncBanner } from '../components/offline/OfflineSyncBanner';
+import { SyncStatusBadge } from '../components/transactions/SyncStatusBadge';
 import { TransactionItem } from '../services/dashboardService';
 import { formatINR, formatTransactionDate } from '../utils/formatters';
 import { groupTransactionsByDate } from '../utils/dateGrouping';
@@ -39,7 +43,7 @@ interface TransactionsScreenProps {
 export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
   onNavigateToAdd,
 }) => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,17 +69,20 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
   const [selectedTx, setSelectedTx] = useState<TransactionItem | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
-  // Fetch Transactions from Backend
+  // Fetch Transactions using offline-first service
   const fetchTransactions = useCallback(
     async (
       pageNum: number = 1,
       isRefresh: boolean = false,
       isLoadMore: boolean = false
     ) => {
-      if (!token) return;
+      const activeUserId = user?.id || '';
 
       if (isRefresh) {
         setIsRefreshing(true);
+        if (token && activeUserId) {
+          syncService.syncPendingTransactions().catch(() => {});
+        }
       } else if (isLoadMore) {
         setIsLoadingMore(true);
       } else {
@@ -102,7 +109,11 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           params.endDate = filterOptions.endDate;
         }
 
-        const response = await transactionService.getTransactions(token, params);
+        const response = await offlineTransactionService.getTransactions(
+          token,
+          activeUserId,
+          params
+        );
 
         if (pageNum === 1) {
           setTransactions(response.data || []);
@@ -120,15 +131,23 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
         setIsLoadingMore(false);
       }
     },
-    [token, selectedTypeFilter, filterOptions]
+    [token, user?.id, selectedTypeFilter, filterOptions]
   );
 
   // Refresh transactions when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      fetchTransactions(1, true);
+      fetchTransactions(1, false);
     }, [fetchTransactions])
   );
+
+  // Subscribe to sync service to update items when synchronization occurs
+  useEffect(() => {
+    const unsubscribe = syncService.subscribe(() => {
+      fetchTransactions(1, false);
+    });
+    return unsubscribe;
+  }, [fetchTransactions]);
 
   // Client-side search filtering
   const filteredTransactions = useMemo(() => {
@@ -231,6 +250,9 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           />
         </TouchableOpacity>
       </View>
+
+      {/* Offline Connectivity & Sync Banner */}
+      <OfflineSyncBanner />
 
       {/* Search Input Bar */}
       <View style={styles.searchContainer}>
@@ -413,6 +435,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                             {tx.category ? `${tx.category} • ` : ''}
                             {formatTransactionDate(tx.date)}
                           </Text>
+                          <SyncStatusBadge status={tx.syncStatus} />
                         </View>
                       </View>
 

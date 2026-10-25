@@ -9,7 +9,14 @@
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "test:offline": "ts-node --files src/test/runOfflineSyncTests.ts",
+    "test:assistant": "ts-node --files src/test/runAiAssistantTests.ts",
+    "test:llm": "ts-node --files src/test/runLlmIntegrationTests.ts",
+    "test:grounded": "ts-node --files src/test/runGroundedAssistantTests.ts",
+    "test:context": "ts-node --files src/test/runPhase4ContextTests.ts",
+    "test:prod": "ts-node --files src/test/runProductionFixTests.ts",
+    "test": "ts-node --files src/test/runOfflineSyncTests.ts && ts-node --files src/test/runAiAssistantTests.ts && ts-node --files src/test/runLlmIntegrationTests.ts && ts-node --files src/test/runGroundedAssistantTests.ts && ts-node --files src/test/runPhase4ContextTests.ts && ts-node --files src/test/runProductionFixTests.ts"
   },
   "keywords": [],
   "author": "",
@@ -21,7 +28,8 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.1",
     "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "openai": "^7.43.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

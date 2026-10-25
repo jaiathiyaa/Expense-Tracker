@@ -2,33 +2,6 @@ import {prisma} from "../lib/prisma";
 import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 
-export const createUser = async (req:Request, res: Response) => {
-    try {
-        const { name, email, password } = req.body;
-
-        const existingUser = await prisma.user.findUnique({
-            where: { email }
-        });
-
-        if (existingUser) {
-            return res.status(400).json({ error: "User with this email already exists." });
-        }
-
-        const newUser = await prisma.user.create({
-            data: {
-                name,
-                email,
-                password
-            }
-        });
-
-        res.status(201).json(newUser);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: "Internal server error." });
-    }
-};
-
 export const getUserById = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;

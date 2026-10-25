@@ -19,8 +19,11 @@ export interface MonthlySummaryItem {
   balance: number;
 }
 
+export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed';
+
 export interface TransactionItem {
   id: string;
+  clientTxId?: string | null;
   title: string;
   amount: number;
   type: 'INCOME' | 'EXPENSE';
@@ -30,9 +33,12 @@ export interface TransactionItem {
   userId: string;
   createdAt: string;
   updatedAt: string;
+  syncStatus?: SyncStatus;
+  syncError?: string;
 }
 
 export interface CreateTransactionPayload {
+  clientTxId?: string;
   title: string;
   amount: number;
   type: 'INCOME' | 'EXPENSE';

@@ -1,22 +1,37 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "Expense Tracker",
+    "slug": "expense-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.expensetracker.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Allow Expense Tracker to access the microphone for voice transaction entry.",
+        "NSSpeechRecognitionUsageDescription": "Allow Expense Tracker to securely recognize your voice for transaction entry."
+      }
     },
     "android": {
+      "package": "com.expensetracker.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -24,7 +39,14 @@
     "plugins": [
       "expo-secure-store",
       "expo-status-bar",
-      "expo-speech-recognition"
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Expense Tracker to access the microphone for voice transaction entry.",
+          "speechRecognitionPermission": "Allow Expense Tracker to securely recognize your voice for transaction entry."
+        }
+      ],
+      "expo-sqlite"
     ]
   }
 }

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { formatINR, formatTransactionDate } from '../../utils/formatters';
 import { TransactionItem } from '../../services/dashboardService';
+import { SyncStatusBadge } from '../transactions/SyncStatusBadge';
 
 interface RecentTransactionsProps {
   transactions: TransactionItem[];
@@ -81,6 +82,7 @@ export const RecentTransactions: React.FC<RecentTransactionsProps> = ({
                         {tx.category ? `${tx.category} • ` : ''}
                         {formatTransactionDate(tx.date)}
                       </Text>
+                      <SyncStatusBadge status={tx.syncStatus} />
                     </View>
                   </View>
 
